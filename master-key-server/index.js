@@ -30,8 +30,8 @@ function pkcs7Unpad(buf) {
 }
 
 app.post('/api/encrypt', async (req, res) => {
-  const { data: base64Data, dek, user_id } = req.body;
-  if (!base64Data || !dek || !user_id) {
+  const { data: base64Data, dek } = req.body;
+  if (!base64Data || !dek) {
     return res.status(400).json({ error: 'Missing fields' });
   }
 
@@ -53,7 +53,7 @@ app.post('/api/encrypt', async (req, res) => {
     const encryptedDek = Buffer.concat([iv2, cipher2.update(pkcs7Pad(dekBuf)), cipher2.final()]);
     const encryptedDekB64 = encryptedDek.toString('base64');
 
-    res.json({ encrypted_key: encryptedKeyB64, encrypted_dek: encryptedDekB64, user_id });
+    res.json({ encrypted_key: encryptedKeyB64, encrypted_dek: encryptedDekB64 });
   } catch (err) {
     console.error('Encryption error:', err);
     res.status(500).json({ error: 'Encryption failed', details: err.message });

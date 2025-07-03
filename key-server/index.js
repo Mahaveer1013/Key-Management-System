@@ -49,8 +49,7 @@ app.post('/api/keys', async (req, res) => {
     try {
         const response = await axios.post('http://localhost:8001/api/encrypt', {
             data: plainData.toString('base64'),
-            dek,
-            user_id
+            dek
         });
 
         const { encrypted_key, encrypted_dek } = response.data;

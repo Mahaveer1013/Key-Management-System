@@ -1,121 +1,264 @@
-# 🔐 Secure Key Management System
+# Key Management System (KMS) with JWT Auth
 
-This project is a **two-part secure key management system** designed to protect secrets even in the case of a compromised server. It uses **asymmetric encryption**, **JWT-based authorization**, and strict role separation between two services:
+## Overview
 
-- **App A: Master Key Manager** – Responsible for encrypting user-submitted secrets and issuing signed access tokens.
-- **App B: Encrypted Key Vault** – Responsible for storing encrypted secrets and only decrypting them if a valid signed token is presented.
+This project is a microservice-based **Key Management System** (KMS) with secure handling of Data Encryption Keys (DEKs), Master Keys (MKs), and JWT-based authentication.
 
----
+### Components
 
-## ⚙️ Technologies Used
-- Python 3.x
-- Flask
-- `cryptography` library
-- `PyJWT` (JWT encoding/decoding)
-- RSA encryption
+1. **Auth Service (`auth/`)**
 
----
+   * Issues and verifies JWT tokens.
 
-## 📦 Directory Structure
-```
-.
-├── app_a.py               # App A - Master Key Manager
-├── app_b.py               # App B - Secure Vault
-├── app_a_private.pem      # App A's RSA private key (for signing tokens)
-├── app_a_public.pem       # App A's RSA public key
-├── app_b_private.pem      # App B's RSA private key (for decrypting data)
-├── app_b_public.pem       # App B's RSA public key (used by App A to encrypt data)
-├── README.md              # This file
-```
+2. **Key Server (`key-server/`)**
+
+   * Handles DEK encryption and user key storage.
+   * Interacts with the Key Vault Server and Auth service.
+
+3. **Key Vault Server (`master-key-server/`)**
+
+   * Performs encryption/decryption of DEKs using master keys.
+   * Stores master keys securely in MySQL.
 
 ---
 
-## 🔧 Setup Instructions
+## Setup
 
-### 1. 📥 Install Dependencies
+### Prerequisites
+
+* Node.js v16+
+* MySQL 8.x
+
+### Environment Variables
+
+Set `ROOT_KEY` for the master key encryption in master-key-server:
+
 ```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install flask cryptography pyjwt requests
+export ROOT_KEY="your-secure-root-key-32bytes"
 ```
 
-### 2. 🔑 Generate RSA Keys
+### MySQL DB
 
-#### For App A (Token Signing)
-```bash
-openssl genpkey -algorithm RSA -out app_a_private.pem -pkeyopt rsa_keygen_bits:2048
-openssl rsa -pubout -in app_a_private.pem -out app_a_public.pem
-```
+Create a database named `kms` in key-server:
 
-#### For App B (Key Encryption/Decryption)
-```bash
-openssl genpkey -algorithm RSA -out app_b_private.pem -pkeyopt rsa_keygen_bits:2048
-openssl rsa -pubout -in app_b_private.pem -out app_b_public.pem
-```
-
-### 3. 🚀 Run the Applications
-```bash
-# Terminal 1
-python app_b.py  # Runs on port 8001
-
-# Terminal 2
-python app_a.py  # Runs on port 8000
+```sql
+CREATE DATABASE kms;
 ```
 
 ---
 
-## 🔁 Usage Workflow
+## Auth Service (Port: `8002`)
 
-### 🔐 Step 1: Store a Secret via App A
-**POST** `http://localhost:8000/api/keys`
+### Endpoints
+
+* `POST /issue`
+
+  * Issues a JWT with custom payload.
+  * **Request:** `{ id: <user_id> }`
+  * **Response:** `{ token: <jwt_token> }`
+
+* `POST /verify`
+
+  * Verifies a JWT and returns the payload.
+  * **Request:** `{ token: <jwt_token> }`
+  * **Response:** `{ valid: true, payload: { id : <user_id> } }`
+
+---
+
+## Key Server (Port: `8000`)
+
+### Endpoints
+
+#### 1. `POST /api/keys`
+
+* Encrypts and stores a user's key.
+* **Input:**
+
 ```json
 {
-  "user_id": "user123",
-  "key_data": "super_secret_value"
+  "data": "<sensitive_data_like_card_number>",
+  "user_id": "<user_id>"
 }
 ```
-📥 **Response:**
+
+* **Flow:**
+
+  1. Generates a 32-byte DEK.
+  2. Sends data + DEK to Key Vault Server for encryption.
+  3. Stores encrypted key + encrypted DEK in DB (`kms_keys`).
+  4. Requests an access token from Auth service. ( for demo )
+  5. Returns JWT token. ( for demo )
+
+* **Response:**
+
 ```json
 {
   "message": "Key stored successfully",
-  "access_token": "<JWT>"
+  "access_token": "<jwt_token>" // for demo
 }
 ```
 
-### 🔓 Step 2: Retrieve the Secret via App B
-**GET** `http://localhost:8001/api/keys/<key_id>`
-```
-Authorization: Bearer <JWT>
-```
-📤 **Response:**
+#### 2. `GET /api/keys`
+
+* Retrieves and decrypts the user’s key.
+
+* **Headers:** `Authorization: Bearer <jwt_token>`
+
+* **Flow:**
+
+  1. Verifies JWT token.
+  2. Fetches encrypted data from `kms_keys` by `user_id`.
+  3. Sends encrypted DEK to Key Vault Server for decryption.
+  4. Decrypts encrypted key using DEK.
+  5. Returns original plaintext data.
+
+* **Response:**
+
 ```json
 {
-  "decrypted_key": "super_secret_value"
+  "data": "<original_plaintext_data>"
+}
+```
+
+#### 3. `GET /api/rotate-mk`
+
+* Placeholder for triggering master key rotation.
+* Not for Production
+---
+
+## Key Vault Server (Port: `8001`)
+
+### Endpoints
+
+#### 1. `POST /api/encrypt`
+
+* Encrypts plaintext using DEK and DEK using Master Key.
+* **Input:**
+
+```json
+{
+  "data": "<base64-encoded-plaintext>",
+  "dek": "<hex-dek>"
+}
+```
+
+* **Returns:**
+
+```json
+{
+  "encrypted_key": "<base64>",
+  "encrypted_dek": "<base64>"
+}
+```
+
+#### 2. `POST /api/decrypt-dek`
+
+* Decrypts an encrypted DEK using the master key.
+* **Headers:** `Authorization: Bearer <jwt_token>`
+* **Input:**
+
+```json
+{
+  "encrypted_dek": "<base64>"
+}
+```
+
+* **Response:**
+
+```json
+{
+  "dek": "<hex-dek>"
 }
 ```
 
 ---
 
-## ✅ Security Features
-- 🔐 **RSA Encryption** (2048-bit) for secure key wrapping
-- 🔏 **JWT-based access tokens** signed by App A
-- 🔑 **Token validation and decryption** only by App B
-- 🔄 **Separation of concerns**: App A never stores secrets, App B never generates tokens
+## Master Key Management
+
+### File: `master_key_manager.js`
+
+Handles lifecycle of Master Keys:
+
+* `addMasterKey(keyId, hexKey)`
+
+  * Encrypts and stores a new MK.
+  * Marks all others as retired.
+
+* `getActiveMasterKey()`
+
+  * Returns the latest active master key (decrypted).
+
+* `getRetiredMasterKeys()`
+
+  * Returns list of previously used MKs.
+
+* `listMasterKeys()`
+
+  * Lists all keys with status and timestamps.
 
 ---
 
-## 🧪 Optional Enhancements
-- Use **AES key wrapping** for faster encryption
-- Add **SQLite/PostgreSQL** backend for persistence
-- Enable **token blacklisting and revocation**
-- Integrate **HSMs or cloud KMS services** (e.g., AWS KMS)
+## Database Schema
+
+### Table: `master_keys`
+
+```sql
+CREATE TABLE master_keys (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    key_id VARCHAR(64) UNIQUE NOT NULL,
+    key_material TEXT NOT NULL,
+    created_at DATETIME NOT NULL,
+    status ENUM('active', 'retired') NOT NULL,
+    description TEXT
+);
+```
+
+### Table: `kms_keys`
+
+```sql
+CREATE TABLE kms_keys (
+    user_id VARCHAR(64) PRIMARY KEY,
+    encrypted_key TEXT,
+    encrypted_dek TEXT,
+    created_at DATETIME
+);
+```
 
 ---
 
-## 📄 License
-MIT License
+## Technical Flow
+
+```mermaid
+graph TD
+    A[Client] -->|POST /api/keys| B(Key Server)
+    B -->|generates DEK + data| C(Key Vault)
+    C -->|returns encrypted_data, encrypted_dek| B
+    B -->|stores in MySQL + gets token| AuthService
+    AuthService -->|issues token| B
+    B --> A
+
+    A -->|GET /api/keys| B2(Key Server)
+    B2 -->|verifies token - gets user_id| AuthService2
+    B2 -->|retrieves encrypted data| MySQL
+    B2 -->|POST /api/decrypt-dek| C2(Key Vault)
+    C2 -->|returns decrypted DEK| B2
+    B2 -->|decrypts user data| A
+```
 
 ---
 
-## 🙋 Need Help?
-Open an issue or request implementation help in other stacks like **Node.js**, **Go**, or **Docker Compose**!
+## Security Notes
+
+* All encryption uses AES-256-CBC with PKCS#7 padding.
+* JWTs are signed using a shared secret.
+* Master keys are encrypted using a hashed root key.
+* Access to endpoints requiring sensitive operations is protected by JWT auth.
+
+---
+
+## Author
+Mahaveer
+
+## License
+
+Apache2
