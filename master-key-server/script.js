@@ -1,16 +1,21 @@
-const { addMasterKey } = require('./master_key_manager');
-const crypto = require('crypto');
+// const { addMasterKey } = require('./master_key_manager');
+// const crypto = require('crypto');
 
-// Generate a unique keyId (could be UUID, timestamp, or custom format)
-const keyId = `key-${Date.now()}`;
+// const addRandomMasterKey = async () => {
+//     const keyId = `key-${Date.now()}`;
+//     const hexKey = crypto.randomBytes(32).toString('hex'); // 32 bytes = 256 bits
 
-// Generate a secure 32-byte master key (in hex format)
-const hexKey = crypto.randomBytes(32).toString('hex');
+//     try {
+//         await addMasterKey(keyId, hexKey);
+//     } catch (err) {
+//         console.error('Error adding master key:', err);
+//         throw err; // Rethrow so caller can handle failure
+//     }
+// };
 
-addMasterKey(keyId, hexKey)
-  .then(() => {
-    console.log(`✅ Master key added: ${keyId}`);
-  })
-  .catch((err) => {
-    console.error('❌ Error adding master key:', err);
-  });
+// // Run the function to add a random master key
+// addRandomMasterKey().then(() => {
+//     console.log('Random master key addition complete.');
+// }).catch(err => {
+//     console.error('Error in adding random master key:', err);
+// });
